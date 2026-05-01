@@ -1,0 +1,7 @@
+fastapi
+requests
+uvicorn
+openai
+python-dotenv
+langgraph
+httpx
