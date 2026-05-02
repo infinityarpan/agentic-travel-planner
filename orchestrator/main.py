@@ -1,11 +1,20 @@
 # orchestrator/main.py
 
-import uuid
 import asyncio
+import sys
+from pathlib import Path
+
+ROOT_DIR = Path(__file__).resolve().parents[1]
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
+
+from common.telemetry import configure_tracing, get_tracer
 from graph import build_graph
 
-async def run():
 
+async def run():
+    configure_tracing("travel-orchestrator")
+    tracer = get_tracer("travel-orchestrator.main")
     graph = build_graph()
 
     initial_state = {
@@ -16,12 +25,16 @@ async def run():
         "feedback": {},
         "attempts": 0,
         "memory": {},
-        "trace_id": str(uuid.uuid4())
     }
 
-    result = await graph.ainvoke(initial_state)
+    with tracer.start_as_current_span("travel_planner.run") as span:
+        span.set_attribute("user.id", initial_state["user_id"])
+        span.set_attribute("travel.user_query", initial_state["user_query"])
+        result = await graph.ainvoke(initial_state)
+        span.set_attribute("travel.plan_step_count", len(result.get("plan", [])))
+        span.set_attribute("travel.attempts", result.get("attempts", 0))
 
-    print("\n✅ Final Output:\n", result)
+    print("\nFinal Output:\n", result)
 
 
 if __name__ == "__main__":

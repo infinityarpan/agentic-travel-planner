@@ -18,9 +18,9 @@ class PlannerAgent:
     def __init__(self, mcp_client):
         self.mcp = mcp_client
 
-    async def plan(self, user_query, memory, trace_id=None):
+    async def plan(self, user_query, memory):
 
-        tools = await self.mcp.list_tools(trace_id=trace_id)
+        tools = await self.mcp.list_tools()
 
         prompt = f"""
 You are a travel planning agent.
@@ -64,13 +64,12 @@ class ExecutorAgent:
     def __init__(self, mcp_client):
         self.mcp = mcp_client
 
-    async def execute(self, plan, trace_id=None):
+    async def execute(self, plan):
 
         async def run_step(step):
             result = await self.mcp.call_tool(
                 step["tool"],
-                step["input"],
-                trace_id=trace_id
+                step["input"]
             )
             return {step["tool"]: result}
 

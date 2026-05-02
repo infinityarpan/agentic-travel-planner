@@ -1,25 +1,25 @@
-# mcp_server/server.py
-
 import logging
-from fastapi import FastAPI, Header
+import sys
+from pathlib import Path
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s | %(name)s | %(levelname)s | %(message)s"
-)
+from fastapi import FastAPI
+
+ROOT_DIR = Path(__file__).resolve().parents[1]
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
+
+from common.telemetry import configure_tracing, instrument_fastapi
+
+configure_tracing("travel-mcp-server")
 logger = logging.getLogger("mcp_server")
 
 app = FastAPI()
+instrument_fastapi(app)
 
 
-def trace_prefix(trace_id):
-    return f"[{trace_id}] " if trace_id else ""
-
-
-# Mock tools
 @app.post("/tools/flights")
-def search_flights(payload: dict, x_trace_id: str | None = Header(default=None)):
-    logger.info(f"{trace_prefix(x_trace_id)}Processing flights request")
+def search_flights(payload: dict):
+    logger.info("Processing flights request")
     return {
         "flights": [
             {"airline": "IndiGo", "price": 5000},
@@ -29,8 +29,8 @@ def search_flights(payload: dict, x_trace_id: str | None = Header(default=None))
 
 
 @app.post("/tools/hotels")
-def search_hotels(payload: dict, x_trace_id: str | None = Header(default=None)):
-    logger.info(f"{trace_prefix(x_trace_id)}Processing hotels request")
+def search_hotels(payload: dict):
+    logger.info("Processing hotels request")
     return {
         "hotels": [
             {"name": "Sea View Resort", "price": 3000},
@@ -40,17 +40,16 @@ def search_hotels(payload: dict, x_trace_id: str | None = Header(default=None)):
 
 
 @app.post("/tools/weather")
-def get_weather(payload: dict, x_trace_id: str | None = Header(default=None)):
-    logger.info(f"{trace_prefix(x_trace_id)}Processing weather request")
+def get_weather(payload: dict):
+    logger.info("Processing weather request")
     return {
         "weather": "Sunny, 30°C"
     }
 
 
-# Tool registry
 @app.get("/tools")
-def list_tools(x_trace_id: str | None = Header(default=None)):
-    logger.info(f"{trace_prefix(x_trace_id)}Listing tools")
+def list_tools():
+    logger.info("Listing tools")
     return {
         "tools": [
             {"name": "flights", "endpoint": "/tools/flights"},
