@@ -27,6 +27,10 @@ _logging_configured = False
 _BANNED_METRIC_ATTRIBUTE_KEYS = {"user_id", "trace_id", "span_id", "travel.user_query", "payload"}
 
 
+def metrics_enabled():
+    return os.getenv("APP_OTEL_METRICS_ENABLED", "true").lower() != "false"
+
+
 class TraceContextFilter(logging.Filter):
     def filter(self, record):
         span = trace.get_current_span()
@@ -134,6 +138,9 @@ def _build_span_processor():
 
 
 def _build_metric_reader():
+    if not metrics_enabled():
+        return None
+
     endpoint = _resolve_otlp_metrics_endpoint()
     export_interval = int(os.getenv("APP_OTEL_METRIC_EXPORT_INTERVAL_MS", "5000"))
 
@@ -179,12 +186,20 @@ def configure_tracing(service_name):
         )
         provider.add_span_processor(_build_span_processor())
         trace.set_tracer_provider(provider)
-        metrics.set_meter_provider(
-            MeterProvider(
-                resource=resource,
-                metric_readers=[_build_metric_reader()],
+        metric_reader = _build_metric_reader()
+        if metric_reader is None:
+            metrics.set_meter_provider(
+                MeterProvider(
+                    resource=resource,
+                )
             )
-        )
+        else:
+            metrics.set_meter_provider(
+                MeterProvider(
+                    resource=resource,
+                    metric_readers=[metric_reader],
+                )
+            )
         _configured_service = service_name
 
     if service_name == "travel-orchestrator" and not _httpx_instrumented:
