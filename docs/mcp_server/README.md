@@ -13,10 +13,8 @@ The MCP server exposes tool endpoints used by the orchestrator. In the current r
 - [mcp_server/server.py](/d:/agentic_travel_planner/mcp_server/server.py)
 
 Responsibilities:
-- initialize telemetry
 - expose FastAPI routes
-- emit correlated logs
-- record request metrics
+- emit plain application logs
 
 ## Endpoints
 
@@ -36,29 +34,8 @@ Returns mocked hotel results, optionally filtered by budget.
 
 Returns live weather results for the requested location.
 
-## Observability Behavior
-
-The server contributes:
-- automatic FastAPI spans
-- correlated logs with trace/span IDs
-- per-endpoint metrics for:
-  - total requests
-  - successful requests
-  - failed requests
-  - request duration
-
-Metric attribute used:
-- `tool_name`
-
 ## Runtime Assumptions
 
 - The server is intended to run as a separate process from the orchestrator.
 - The orchestrator currently expects it on `127.0.0.1:8001`.
-- Restart the server after telemetry changes so new instrumentation is active.
-
-## Future Production Direction
-
-When deployed behind real infrastructure:
-- keep app code responsible for endpoint behavior and app-level telemetry
-- let the collector/platform enrich infra metadata
-- prefer collector-based export over direct backend export
+- The server uses plain Python logging for request visibility.

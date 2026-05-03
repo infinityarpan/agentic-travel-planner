@@ -1,13 +1,10 @@
 import asyncio
 from typing import Any
 
-from openai import APIConnectionError, APITimeoutError, AsyncOpenAI, RateLimitError
+from openai import AsyncOpenAI
 
 from orchestrator.config import Settings
 from orchestrator.schemas import CriticFeedback, PlanStep, parse_critic_feedback, parse_plan_steps
-
-
-TRANSIENT_OPENAI_ERRORS = (APIConnectionError, APITimeoutError, RateLimitError)
 
 
 class PlannerAgent:
@@ -37,16 +34,6 @@ Return a JSON array of steps like:
 
 Only return valid JSON. No explanation.
 """
-        return await self._with_retries(
-            lambda: self._generate_plan(prompt),
-            fallback=[
-                PlanStep(tool="weather", input={"location": "Goa"}),
-                PlanStep(tool="flights", input={"from": "Kolkata", "to": "Goa"}),
-                PlanStep(tool="hotels", input={"location": "Goa"}),
-            ],
-        )
-
-    async def _generate_plan(self, prompt: str) -> list[PlanStep]:
         response = await self.client.chat.completions.create(
             model=self.settings.planner_model,
             messages=[{"role": "user", "content": prompt}],
@@ -54,20 +41,6 @@ Only return valid JSON. No explanation.
         )
         content = response.choices[0].message.content or "[]"
         return parse_plan_steps(content)
-
-    async def _with_retries(self, operation, fallback):
-        last_error = None
-        for attempt in range(1, self.settings.openai_max_retries + 1):
-            try:
-                return await operation()
-            except TRANSIENT_OPENAI_ERRORS as exc:
-                last_error = exc
-                if attempt == self.settings.openai_max_retries:
-                    break
-                await asyncio.sleep(self.settings.openai_retry_delay_seconds)
-            except Exception:
-                return fallback
-        return fallback if last_error else fallback
 
 
 class ExecutorAgent:
@@ -107,9 +80,6 @@ Evaluate:
 Return JSON:
 {{"status": "good" or "bad", "reason": "..."}}
 """
-        return await self._with_retries(lambda: self._generate_feedback(prompt))
-
-    async def _generate_feedback(self, prompt: str) -> CriticFeedback:
         response = await self.client.chat.completions.create(
             model=self.settings.critic_model,
             messages=[{"role": "user", "content": prompt}],
@@ -117,15 +87,3 @@ Return JSON:
         )
         content = response.choices[0].message.content or "{}"
         return parse_critic_feedback(content)
-
-    async def _with_retries(self, operation):
-        for attempt in range(1, self.settings.openai_max_retries + 1):
-            try:
-                return await operation()
-            except TRANSIENT_OPENAI_ERRORS:
-                if attempt == self.settings.openai_max_retries:
-                    break
-                await asyncio.sleep(self.settings.openai_retry_delay_seconds)
-            except Exception:
-                return CriticFeedback(status="good", reason="Critic fallback applied.")
-        return CriticFeedback(status="good", reason="Critic fallback applied after retries.")

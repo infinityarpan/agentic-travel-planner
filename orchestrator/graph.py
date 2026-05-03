@@ -1,10 +1,9 @@
 from langgraph.graph import END, StateGraph
 
-from orchestrator.router import build_route_after_critic
 from orchestrator.state import TravelState
 
 
-def build_graph(nodes, max_attempts: int):
+def build_graph(nodes):
     builder = StateGraph(TravelState)
 
     builder.add_node("memory_load", nodes.memory_load_node)
@@ -17,14 +16,7 @@ def build_graph(nodes, max_attempts: int):
     builder.add_edge("memory_load", "planner")
     builder.add_edge("planner", "executor")
     builder.add_edge("executor", "critic")
-    builder.add_conditional_edges(
-        "critic",
-        build_route_after_critic(max_attempts),
-        {
-            "planner": "planner",
-            "end": "memory_save",
-        },
-    )
+    builder.add_edge("critic", "memory_save")
     builder.add_edge("memory_save", END)
 
     return builder.compile()

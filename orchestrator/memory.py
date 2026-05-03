@@ -55,10 +55,6 @@ class Memory:
             )
             connection.commit()
 
-    def healthcheck(self) -> None:
-        with closing(self._connect()) as connection:
-            connection.execute("SELECT 1")
-
     def get_user_memory(self, user_id: str) -> dict[str, Any]:
         try:
             with closing(self._connect()) as connection:

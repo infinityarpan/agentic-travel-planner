@@ -20,9 +20,8 @@ Responsibilities:
 - [orchestrator/api.py](/d:/agentic_travel_planner/orchestrator/api.py)
 
 Responsibilities:
-- initialize tracing/metrics/log correlation for the orchestrator service
 - expose `POST /plan-trip`
-- expose `GET /health` and `GET /ready`
+- expose `GET /health`
 - expose `GET /runs`, `GET /runs/{run_id}`, and `GET /users/{user_id}/memory`
 - validate request/response payloads with Pydantic
 
@@ -44,7 +43,7 @@ Responsibilities:
 Responsibilities:
 - define node ordering
 - define entry point
-- define routing after critic evaluation
+- define the linear workflow path
 
 ### Nodes
 
@@ -52,9 +51,7 @@ Responsibilities:
 
 Responsibilities:
 - wrap business operations in graph nodes
-- create business spans for each node
-- record node-level metrics
-- emit correlated logs
+- emit plain application logs
 
 Node flow:
 - `memory_load`
@@ -79,8 +76,6 @@ Responsibilities:
 Responsibilities:
 - call `/tools`
 - call tool endpoints
-- record tool-call metrics
-- create MCP helper spans
 - surface request/response failures
 
 ### Memory
@@ -108,22 +103,10 @@ Current state fields:
 - `memory_after`
 - `status`
 
-## Observability Behavior
-
-The orchestrator contributes:
-- root workflow span
-- per-node spans
-- MCP helper spans
-- node metrics
-- graph run metrics
-- MCP client metrics
-- logs with trace/span correlation
-
 ## Operational Notes
 
 - The orchestrator reads runtime configuration from environment variables.
 - `OPENAI_API_KEY` is required at startup.
 - The orchestrator persists to SQLite via `TRAVEL_DB_PATH`.
 - The orchestrator assumes the MCP server is reachable at `MCP_BASE_URL`.
-- In production, prefer pointing OTLP to a collector rather than directly to a backend.
-- If this component is split into more services later, keep `parentbased_traceidratio` sampling to preserve distributed trace consistency.
+- The orchestrator uses plain Python logging for local debugging.

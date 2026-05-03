@@ -1,25 +1,12 @@
-import time
-
-from common.telemetry import get_meter, get_tracer, metric_attributes
 from orchestrator.config import Settings
-from orchestrator.errors import ServiceDependencyError, ToolExecutionError
 from orchestrator.graph import build_graph
+from orchestrator.logger import get_logger
 from orchestrator.mcp_client import MCPClient
 from orchestrator.memory import Memory
 from orchestrator.nodes import TravelPlannerNodes
 from orchestrator.schemas import PlannerRunListResponse, PlannerRunRecord, TravelPlanRequest, TravelPlanResponse, UserMemoryResponse
 
-tracer = get_tracer("travel-orchestrator.service")
-meter = get_meter("travel-orchestrator.service")
-graph_run_counter = meter.create_counter(
-    "travel.graph.runs",
-    description="Number of graph runs.",
-)
-graph_run_duration = meter.create_histogram(
-    "travel.graph.run.duration",
-    unit="s",
-    description="Duration of graph runs in seconds.",
-)
+logger = get_logger("travel_planner_service")
 
 
 class TravelPlannerService:
@@ -29,10 +16,7 @@ class TravelPlannerService:
         self.memory_store = Memory(settings.database_path)
         self.mcp_client = MCPClient(settings)
         self.nodes = TravelPlannerNodes(settings, self.memory_store, self.mcp_client)
-        self.graph = build_graph(self.nodes, settings.critic_max_attempts)
-
-    def readiness_check(self) -> None:
-        self.memory_store.healthcheck()
+        self.graph = build_graph(self.nodes)
 
     def get_run(self, run_id: int) -> PlannerRunRecord:
         return PlannerRunRecord.model_validate(self.memory_store.get_run(run_id))
@@ -61,29 +45,13 @@ class TravelPlannerService:
             "status": "running",
         }
 
-        start = time.time()
         try:
-            with tracer.start_as_current_span("travel_planner.run") as span:
-                span.set_attribute("user.id", request.user_id)
-                span.set_attribute("travel.user_query", request.user_query)
-                result = await self.graph.ainvoke(initial_state)
-                span.set_attribute("travel.plan_step_count", len(result.get("plan", [])))
-                span.set_attribute("travel.attempts", result.get("attempts", 0))
-                attributes = metric_attributes(run_type="travel_planner")
-                graph_run_counter.add(1, attributes)
-                graph_run_duration.record(time.time() - start, attributes)
-        except ToolExecutionError as exc:
-            attempts = initial_state.get("attempts", 0)
-            self.memory_store.fail_run(run_id, attempts=attempts, error_message=str(exc))
-            raise
-        except ServiceDependencyError as exc:
-            attempts = initial_state.get("attempts", 0)
-            self.memory_store.fail_run(run_id, attempts=attempts, error_message=exc.detail)
-            raise
+            logger.info(f"Starting trip planning run {run_id} for user {request.user_id}")
+            result = await self.graph.ainvoke(initial_state)
         except Exception as exc:
             attempts = initial_state.get("attempts", 0)
             self.memory_store.fail_run(run_id, attempts=attempts, error_message=str(exc))
-            raise ServiceDependencyError(f"Trip planning failed: {exc}") from exc
+            raise
 
         self.memory_store.complete_run(
             run_id,
@@ -94,6 +62,7 @@ class TravelPlannerService:
             feedback=result["feedback"],
             memory_after=result.get("memory_after", memory_before),
         )
+        logger.info(f"Completed trip planning run {run_id} with status {result.get('status', result['feedback']['status'])}")
 
         return TravelPlanResponse(
             run_id=run_id,
