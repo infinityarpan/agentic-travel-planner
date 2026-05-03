@@ -1,9 +1,11 @@
 import logging
 import os
 
-from opentelemetry import trace
+from opentelemetry import metrics, trace
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
+from opentelemetry.sdk.metrics import MeterProvider
+from opentelemetry.sdk.metrics.export import ConsoleMetricExporter, PeriodicExportingMetricReader
 from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor, ConsoleSpanExporter, SimpleSpanProcessor
@@ -14,9 +16,15 @@ try:
 except ImportError:  # pragma: no cover - dependency may be absent until installed
     OTLPSpanExporter = None
 
+try:
+    from opentelemetry.exporter.otlp.proto.http.metric_exporter import OTLPMetricExporter
+except ImportError:  # pragma: no cover - dependency may be absent until installed
+    OTLPMetricExporter = None
+
 _configured_service = None
 _httpx_instrumented = False
 _logging_configured = False
+_BANNED_METRIC_ATTRIBUTE_KEYS = {"user_id", "trace_id", "span_id", "travel.user_query", "payload"}
 
 
 class TraceContextFilter(logging.Filter):
@@ -78,6 +86,10 @@ def _build_resource(service_name):
     return Resource.create(resource_attributes)
 
 
+def _is_production_env():
+    return os.getenv("APP_ENV", "development").lower() == "production"
+
+
 def _resolve_otlp_endpoint():
     traces_endpoint = os.getenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT")
     if traces_endpoint:
@@ -86,6 +98,18 @@ def _resolve_otlp_endpoint():
     base_endpoint = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT")
     if base_endpoint:
         return f"{base_endpoint.rstrip('/')}/v1/traces"
+
+    return None
+
+
+def _resolve_otlp_metrics_endpoint():
+    metrics_endpoint = os.getenv("OTEL_EXPORTER_OTLP_METRICS_ENDPOINT")
+    if metrics_endpoint:
+        return metrics_endpoint
+
+    base_endpoint = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT")
+    if base_endpoint:
+        return f"{base_endpoint.rstrip('/')}/v1/metrics"
 
     return None
 
@@ -100,7 +124,36 @@ def _build_span_processor():
         )
         return BatchSpanProcessor(exporter)
 
+    if _is_production_env():
+        raise RuntimeError(
+            "Tracing is running in production, but no OTLP traces endpoint is configured. "
+            "Set OTEL_EXPORTER_OTLP_TRACES_ENDPOINT or OTEL_EXPORTER_OTLP_ENDPOINT."
+        )
+
     return SimpleSpanProcessor(ConsoleSpanExporter())
+
+
+def _build_metric_reader():
+    endpoint = _resolve_otlp_metrics_endpoint()
+    export_interval = int(os.getenv("APP_OTEL_METRIC_EXPORT_INTERVAL_MS", "5000"))
+
+    if endpoint and OTLPMetricExporter is not None:
+        exporter = OTLPMetricExporter(
+            endpoint=endpoint,
+            headers=os.getenv("OTEL_EXPORTER_OTLP_HEADERS"),
+        )
+        return PeriodicExportingMetricReader(exporter, export_interval_millis=export_interval)
+
+    if _is_production_env():
+        raise RuntimeError(
+            "Metrics are running in production, but no OTLP metrics endpoint is configured. "
+            "Set OTEL_EXPORTER_OTLP_METRICS_ENDPOINT or OTEL_EXPORTER_OTLP_ENDPOINT."
+        )
+
+    return PeriodicExportingMetricReader(
+        ConsoleMetricExporter(),
+        export_interval_millis=export_interval,
+    )
 
 
 def configure_tracing(service_name):
@@ -110,15 +163,28 @@ def configure_tracing(service_name):
     if _configured_service == service_name:
         return trace.get_tracer(service_name)
 
+    if _configured_service is not None and _configured_service != service_name:
+        raise RuntimeError(
+            f"Telemetry is already configured for service '{_configured_service}'. "
+            f"Cannot reconfigure the same process for '{service_name}'."
+        )
+
     _configure_logging()
 
     if _configured_service is None:
+        resource = _build_resource(service_name)
         provider = TracerProvider(
-            resource=_build_resource(service_name),
+            resource=resource,
             sampler=_resolve_sampler(),
         )
         provider.add_span_processor(_build_span_processor())
         trace.set_tracer_provider(provider)
+        metrics.set_meter_provider(
+            MeterProvider(
+                resource=resource,
+                metric_readers=[_build_metric_reader()],
+            )
+        )
         _configured_service = service_name
 
     if service_name == "travel-orchestrator" and not _httpx_instrumented:
@@ -130,6 +196,19 @@ def configure_tracing(service_name):
 
 def get_tracer(name):
     return trace.get_tracer(name)
+
+
+def get_meter(name):
+    return metrics.get_meter(name)
+
+
+def metric_attributes(**attributes):
+    for key, value in attributes.items():
+        if key in _BANNED_METRIC_ATTRIBUTE_KEYS:
+            raise ValueError(f"Metric attribute '{key}' is not allowed due to cardinality risk.")
+        if isinstance(value, str) and len(value) > 100:
+            raise ValueError(f"Metric attribute '{key}' is too long and may be high-cardinality.")
+    return attributes
 
 
 def instrument_fastapi(app):
