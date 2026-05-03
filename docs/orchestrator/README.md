@@ -2,12 +2,9 @@
 
 ## Purpose
 
-The orchestrator is the workflow engine for the travel-planning flow. It coordinates:
-- user memory loading
-- planning
-- MCP tool execution
-- result review
-- memory persistence
+The orchestrator is now both:
+- the workflow engine for the travel-planning flow
+- the FastAPI backend API that exposes synchronous trip planning
 
 ## Main Components
 
@@ -16,10 +13,29 @@ The orchestrator is the workflow engine for the travel-planning flow. It coordin
 - [orchestrator/main.py](/d:/agentic_travel_planner/orchestrator/main.py)
 
 Responsibilities:
-- initialize tracing/metrics/log correlation
-- build the LangGraph workflow
-- create the initial workflow state
-- run the graph under a root span
+- run a local CLI smoke flow against the same service layer used by the API
+
+### API
+
+- [orchestrator/api.py](/d:/agentic_travel_planner/orchestrator/api.py)
+
+Responsibilities:
+- initialize tracing/metrics/log correlation for the orchestrator service
+- expose `POST /plan-trip`
+- expose `GET /health` and `GET /ready`
+- expose `GET /runs`, `GET /runs/{run_id}`, and `GET /users/{user_id}/memory`
+- validate request/response payloads with Pydantic
+
+### Service
+
+- [orchestrator/service.py](/d:/agentic_travel_planner/orchestrator/service.py)
+
+Responsibilities:
+- create planner run records
+- invoke the LangGraph workflow
+- persist final run results
+- shape the API response
+- load persisted run history and user memory for API reads
 
 ### Graph definition
 
@@ -72,8 +88,8 @@ Responsibilities:
 - [orchestrator/memory.py](/d:/agentic_travel_planner/orchestrator/memory.py)
 
 Responsibilities:
-- load and save user memory to a JSON file
-- persist simple user preferences derived from results
+- persist user memory to SQLite
+- persist planner run metadata and final results
 
 ## State Model
 
@@ -81,6 +97,7 @@ Workflow state is defined in:
 - [orchestrator/state.py](/d:/agentic_travel_planner/orchestrator/state.py)
 
 Current state fields:
+- `run_id`
 - `user_query`
 - `user_id`
 - `plan`
@@ -88,6 +105,8 @@ Current state fields:
 - `feedback`
 - `attempts`
 - `memory`
+- `memory_after`
+- `status`
 
 ## Observability Behavior
 
@@ -102,6 +121,9 @@ The orchestrator contributes:
 
 ## Operational Notes
 
-- The orchestrator assumes the MCP server is reachable at `http://127.0.0.1:8001`.
+- The orchestrator reads runtime configuration from environment variables.
+- `OPENAI_API_KEY` is required at startup.
+- The orchestrator persists to SQLite via `TRAVEL_DB_PATH`.
+- The orchestrator assumes the MCP server is reachable at `MCP_BASE_URL`.
 - In production, prefer pointing OTLP to a collector rather than directly to a backend.
 - If this component is split into more services later, keep `parentbased_traceidratio` sampling to preserve distributed trace consistency.

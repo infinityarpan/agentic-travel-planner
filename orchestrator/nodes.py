@@ -1,13 +1,13 @@
-# orchestrator/nodes.py
-
 import time
-from common.telemetry import get_meter, get_tracer, metric_attributes
-from agents import PlannerAgent, ExecutorAgent, CriticAgent
-from mcp_client import MCPClient
-from memory import Memory
-from logger import get_logger
+from typing import Any
 
-memory_store = Memory()
+from common.telemetry import get_meter, get_tracer, metric_attributes
+from orchestrator.agents import CriticAgent, ExecutorAgent, PlannerAgent
+from orchestrator.config import Settings
+from orchestrator.logger import get_logger
+from orchestrator.mcp_client import MCPClient
+from orchestrator.memory import Memory
+
 tracer = get_tracer("travel-orchestrator.nodes")
 meter = get_meter("travel-orchestrator.nodes")
 node_run_counter = meter.create_counter(
@@ -20,95 +20,96 @@ node_run_duration = meter.create_histogram(
     description="Duration of graph node executions in seconds.",
 )
 
-memory_load_logger = get_logger("memory_load")
 
-def memory_load_node(state):
-    start = time.time()
-    with tracer.start_as_current_span("memory_load") as span:
-        span.set_attribute("user.id", state["user_id"])
-        memory_load_logger.info(f"Loading memory for user: {state['user_id']}")
-        user_mem = memory_store.get_user_memory(state["user_id"])
-        memory_load_logger.info(f"Loaded memory: {user_mem}")
-        attributes = metric_attributes(node_name="memory_load")
-        node_run_counter.add(1, attributes)
-        node_run_duration.record(time.time() - start, attributes)
-        return {**state, "memory": user_mem}
+class TravelPlannerNodes:
+    def __init__(self, settings: Settings, memory_store: Memory, mcp_client: MCPClient):
+        self.settings = settings
+        self.memory_store = memory_store
+        self.planner = PlannerAgent(mcp_client, settings)
+        self.executor = ExecutorAgent(mcp_client)
+        self.critic = CriticAgent(settings)
 
-memory_save_logger = get_logger("memory_save")
+        self.memory_load_logger = get_logger("memory_load")
+        self.memory_save_logger = get_logger("memory_save")
+        self.planner_logger = get_logger("planner")
+        self.executor_logger = get_logger("executor")
+        self.critic_logger = get_logger("critic")
 
-def memory_save_node(state):
-    start = time.time()
-    with tracer.start_as_current_span("memory_save") as span:
-        span.set_attribute("user.id", state["user_id"])
-        memory_save_logger.info("Saving user memory")
-        preferences = {}
+    def memory_load_node(self, state):
+        start = time.time()
+        with tracer.start_as_current_span("memory_load") as span:
+            span.set_attribute("user.id", state["user_id"])
+            self.memory_load_logger.info(f"Loading memory for user: {state['user_id']}")
+            user_mem = self.memory_store.get_user_memory(state["user_id"])
+            self.memory_load_logger.info(f"Loaded memory: {user_mem}")
+            attributes = metric_attributes(node_name="memory_load")
+            node_run_counter.add(1, attributes)
+            node_run_duration.record(time.time() - start, attributes)
+            return {**state, "memory": user_mem}
 
-        for result in state.get("results", []):
-            flights = result.get("flights", {}).get("flights")
-            if flights:
-                cheapest = min(flights, key=lambda x: x["price"])
-                preferences["preferred_airline"] = cheapest["airline"]
+    def memory_save_node(self, state):
+        start = time.time()
+        with tracer.start_as_current_span("memory_save") as span:
+            span.set_attribute("user.id", state["user_id"])
+            self.memory_save_logger.info("Saving user memory")
+            preferences: dict[str, Any] = {}
 
-        memory_store.update_user_memory(state["user_id"], preferences)
-        memory_save_logger.info(f"Updated memory for user: {state['user_id']}")
-        attributes = metric_attributes(node_name="memory_save")
-        node_run_counter.add(1, attributes)
-        node_run_duration.record(time.time() - start, attributes)
-        return state
+            for result in state.get("results", []):
+                flights = result.get("flights", {}).get("flights")
+                if flights:
+                    cheapest = min(flights, key=lambda x: x["price"])
+                    preferences["preferred_airline"] = cheapest["airline"]
 
-mcp_client = MCPClient()
+            updated_memory = self.memory_store.update_user_memory(state["user_id"], preferences)
+            self.memory_save_logger.info(f"Updated memory for user: {state['user_id']}")
+            attributes = metric_attributes(node_name="memory_save")
+            node_run_counter.add(1, attributes)
+            node_run_duration.record(time.time() - start, attributes)
+            return {**state, "memory_after": updated_memory}
 
-planner = PlannerAgent(mcp_client)
-executor = ExecutorAgent(mcp_client)
-critic = CriticAgent()
+    async def planner_node(self, state):
+        start = time.time()
+        with tracer.start_as_current_span("planner") as span:
+            span.set_attribute("user.id", state["user_id"])
+            span.set_attribute("travel.user_query", state["user_query"])
+            self.planner_logger.info(f"Planning for query: {state['user_query']}")
+            plan = await self.planner.plan(state["user_query"], state["memory"])
+            plan_payload = [step.model_dump() for step in plan]
+            span.set_attribute("travel.plan_step_count", len(plan_payload))
+            self.planner_logger.info(f"Generated plan: {plan_payload}")
+            attributes = metric_attributes(node_name="planner")
+            node_run_counter.add(1, attributes)
+            node_run_duration.record(time.time() - start, attributes)
+            return {**state, "plan": plan_payload}
 
-planner_logger = get_logger("planner")
+    async def executor_node(self, state):
+        start = time.time()
+        with tracer.start_as_current_span("executor") as span:
+            span.set_attribute("travel.plan_step_count", len(state["plan"]))
+            self.executor_logger.info(f"Executing plan with {len(state['plan'])} steps")
+            results = await self.executor.execute(state["plan"])
+            duration = round(time.time() - start, 3)
+            span.set_attribute("travel.execution_seconds", duration)
+            self.executor_logger.info(f"Execution completed in {duration}s")
+            self.executor_logger.info(f"Execution results: {results}")
+            attributes = metric_attributes(node_name="executor")
+            node_run_counter.add(1, attributes)
+            node_run_duration.record(time.time() - start, attributes)
+            return {**state, "results": results}
 
-async def planner_node(state):
-    start = time.time()
-    with tracer.start_as_current_span("planner") as span:
-        span.set_attribute("user.id", state["user_id"])
-        span.set_attribute("travel.user_query", state["user_query"])
-        planner_logger.info(f"Planning for query: {state['user_query']}")
-        plan = await planner.plan(state["user_query"], state["memory"])
-        span.set_attribute("travel.plan_step_count", len(plan))
-        planner_logger.info(f"Generated plan: {plan}")
-        attributes = metric_attributes(node_name="planner")
-        node_run_counter.add(1, attributes)
-        node_run_duration.record(time.time() - start, attributes)
-        return {**state, "plan": plan}
-
-executor_logger = get_logger("executor")
-
-async def executor_node(state):
-    start = time.time()
-    with tracer.start_as_current_span("executor") as span:
-        span.set_attribute("travel.plan_step_count", len(state["plan"]))
-        executor_logger.info(f"Executing plan with {len(state['plan'])} steps")
-        results = await executor.execute(state["plan"])
-        duration = round(time.time() - start, 3)
-        span.set_attribute("travel.execution_seconds", duration)
-        executor_logger.info(f"Execution completed in {duration}s")
-        executor_logger.info(f"Execution results: {results}")
-        attributes = metric_attributes(node_name="executor")
-        node_run_counter.add(1, attributes)
-        node_run_duration.record(time.time() - start, attributes)
-        return {**state, "results": results}
-
-critic_logger = get_logger("critic")
-
-def critic_node(state):
-    start = time.time()
-    with tracer.start_as_current_span("critic") as span:
-        span.set_attribute("travel.attempts", state["attempts"])
-        critic_logger.info("Evaluating results")
-        feedback = critic.review(state["user_query"], state["results"])
-        critic_logger.info(f"Critic feedback: {feedback}")
-        attributes = metric_attributes(node_name="critic")
-        node_run_counter.add(1, attributes)
-        node_run_duration.record(time.time() - start, attributes)
-        return {
-            **state,
-            "feedback": feedback,
-            "attempts": state["attempts"] + 1
-        }
+    async def critic_node(self, state):
+        start = time.time()
+        with tracer.start_as_current_span("critic") as span:
+            span.set_attribute("travel.attempts", state["attempts"])
+            self.critic_logger.info("Evaluating results")
+            feedback = await self.critic.review(state["user_query"], state["results"])
+            self.critic_logger.info(f"Critic feedback: {feedback.model_dump()}")
+            attributes = metric_attributes(node_name="critic")
+            node_run_counter.add(1, attributes)
+            node_run_duration.record(time.time() - start, attributes)
+            return {
+                **state,
+                "feedback": feedback.model_dump(),
+                "attempts": state["attempts"] + 1,
+                "status": feedback.status,
+            }

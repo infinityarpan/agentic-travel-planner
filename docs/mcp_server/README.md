@@ -2,10 +2,10 @@
 
 ## Purpose
 
-The MCP server exposes tool endpoints used by the orchestrator. In the current repo it is a small FastAPI service with mock responses for:
+The MCP server exposes tool endpoints used by the orchestrator. In the current repo it is a small FastAPI service with:
 - flights
 - hotels
-- weather
+- weather via a live Open-Meteo integration
 - tool registry
 
 ## Entry Point
@@ -26,15 +26,15 @@ Returns the tool registry used by the orchestrator planner.
 
 ### `POST /tools/flights`
 
-Returns mock flight results.
+Returns mocked flight results, optionally filtered by preferred airline or budget.
 
 ### `POST /tools/hotels`
 
-Returns mock hotel results.
+Returns mocked hotel results, optionally filtered by budget.
 
 ### `POST /tools/weather`
 
-Returns mock weather results.
+Returns live weather results for the requested location.
 
 ## Observability Behavior
 

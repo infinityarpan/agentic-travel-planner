@@ -1,12 +1,15 @@
-# orchestrator/state.py
+from typing import Any, NotRequired, TypedDict
 
-from typing import TypedDict, List, Dict
 
 class TravelState(TypedDict):
+    run_id: int
     user_query: str
     user_id: str
-    plan: List[Dict]
-    results: List[Dict]
-    feedback: Dict
+    plan: list[dict[str, Any]]
+    results: list[dict[str, Any]]
+    feedback: dict[str, Any]
     attempts: int
-    memory: Dict
+    memory: dict[str, Any]
+    memory_after: dict[str, Any]
+    status: str
+    error_message: NotRequired[str]
