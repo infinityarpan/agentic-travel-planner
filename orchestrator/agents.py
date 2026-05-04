@@ -5,6 +5,10 @@ from openai import AsyncOpenAI
 from orchestrator.config import Settings
 from orchestrator.schemas import TripBrief, parse_trip_brief
 
+from orchestrator.logger import get_logger
+
+logger = get_logger("agents")
+
 
 class TripBriefAgent:
     def __init__(self, settings: Settings):
@@ -31,12 +35,12 @@ Convert the user request into JSON that matches this shape exactly:
 }}
 
 Rules:
-- Prefer explicit user details over defaults.
-- If origin is missing, use "{memory.get('home_city', 'Kolkata')}" and record that assumption.
-- If traveler count is missing, assume 2 and record that assumption.
-- If duration is missing, assume 3 nights and record that assumption.
-- If budget is missing, assume 30000 and record that assumption.
-- If month/season is missing, use null for travel_month and record a seasonal assumption.
+- Properly understand user's query and prefer explicit user details over defaults.
+- If origin is missing, use "{memory.get('home_city', 'Kolkata')}" and record that in assumptions.
+- If traveler count is missing, assume 2 and record that in assumptions.
+- If duration is missing, assume 3 nights and record that in assumptions.
+- If budget is missing, assume 30000 and record that in assumptions.
+- If month/season is missing, use null for travel_month and record a seasonal in assumptions.
 - Keep interests and food_preferences concise and relevant.
 - Only return valid JSON with no explanation.
 
@@ -46,6 +50,7 @@ User memory:
 User request:
 {user_query}
 """
+        logger.info(f"Interpreting user query with prompt:\n{prompt}")
         response = await self.client.chat.completions.create(
             model=self.settings.interpreter_model,
             messages=[{"role": "user", "content": prompt}],
