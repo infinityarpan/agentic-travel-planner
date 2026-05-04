@@ -17,10 +17,10 @@ from orchestrator.errors import (
 from orchestrator.logger import configure_logging
 from orchestrator.schemas import (
     ErrorResponse,
-    PlannerRunListResponse,
-    PlannerRunRecord,
     TravelPlanRequest,
     TravelPlanResponse,
+    TravelRunListResponse,
+    TravelRunRecord,
     UserMemoryResponse,
 )
 from orchestrator.service import TravelPlannerService
@@ -32,7 +32,7 @@ def create_app(
 ) -> FastAPI:
     configure_logging()
 
-    app = FastAPI(title="Agentic Travel Planner", version="1.1.0")
+    app = FastAPI(title="Travel Platform Backend Simulator", version="2.0.0")
 
     resolved_settings = settings or Settings.from_env()
     resolved_service = service or TravelPlannerService(resolved_settings)
@@ -85,13 +85,13 @@ def create_app(
 
     @app.get(
         "/runs/{run_id}",
-        response_model=PlannerRunRecord,
+        response_model=TravelRunRecord,
         responses={404: {"model": ErrorResponse}},
     )
     def get_run(run_id: int, request: Request):
         return request.app.state.service.get_run(run_id)
 
-    @app.get("/runs", response_model=PlannerRunListResponse)
+    @app.get("/runs", response_model=TravelRunListResponse)
     def list_runs(
         request: Request,
         user_id: str | None = Query(default=None),

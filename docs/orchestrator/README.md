@@ -2,18 +2,13 @@
 
 ## Purpose
 
-The orchestrator is now both:
-- the workflow engine for the travel-planning flow
-- the FastAPI backend API that exposes synchronous trip planning
+The orchestrator is the API-facing layer of the travel-platform simulator.
+
+It is intentionally thin:
+- AI interprets the user request into a structured trip brief
+- deterministic logic builds service requests, assembles packages, ranks outcomes, and learns preferences
 
 ## Main Components
-
-### Entry point
-
-- [orchestrator/main.py](/d:/agentic_travel_planner/orchestrator/main.py)
-
-Responsibilities:
-- run a local CLI smoke flow against the same service layer used by the API
 
 ### API
 
@@ -23,90 +18,47 @@ Responsibilities:
 - expose `POST /plan-trip`
 - expose `GET /health`
 - expose `GET /runs`, `GET /runs/{run_id}`, and `GET /users/{user_id}/memory`
-- validate request/response payloads with Pydantic
+- validate request and response payloads
 
-### Service
-
-- [orchestrator/service.py](/d:/agentic_travel_planner/orchestrator/service.py)
-
-Responsibilities:
-- create planner run records
-- invoke the LangGraph workflow
-- persist final run results
-- shape the API response
-- load persisted run history and user memory for API reads
-
-### Graph definition
-
-- [orchestrator/graph.py](/d:/agentic_travel_planner/orchestrator/graph.py)
-
-Responsibilities:
-- define node ordering
-- define entry point
-- define the linear workflow path
-
-### Nodes
-
-- [orchestrator/nodes.py](/d:/agentic_travel_planner/orchestrator/nodes.py)
-
-Responsibilities:
-- wrap business operations in graph nodes
-- emit plain application logs
-
-Node flow:
-- `memory_load`
-- `planner`
-- `executor`
-- `critic`
-- `memory_save`
-
-### Agents
+### Trip Brief Agent
 
 - [orchestrator/agents.py](/d:/agentic_travel_planner/orchestrator/agents.py)
 
 Responsibilities:
-- build LLM prompts
-- request planning and critic decisions from OpenAI
-- execute MCP calls concurrently via the executor agent
+- extract origin, destination, budget, duration, style, and assumptions from natural language
 
-### MCP client
+### Service Client
 
 - [orchestrator/mcp_client.py](/d:/agentic_travel_planner/orchestrator/mcp_client.py)
 
 Responsibilities:
-- call `/tools`
-- call tool endpoints
-- surface request/response failures
+- call the internal backend service catalog
+- validate service response contracts
 
-### Memory
+### Package Builder
+
+- [orchestrator/package_builder.py](/d:/agentic_travel_planner/orchestrator/package_builder.py)
+
+Responsibilities:
+- combine compatible offers into ranked trip packages
+- compute budget fit and total estimated cost
+- choose the recommended package
+
+### Persistence
 
 - [orchestrator/memory.py](/d:/agentic_travel_planner/orchestrator/memory.py)
 
 Responsibilities:
-- persist user memory to SQLite
-- persist planner run metadata and final results
+- persist user preference memory
+- persist normalized trip briefs, service traces, ranked packages, and selected recommendations
 
-## State Model
+## Output Model
 
-Workflow state is defined in:
-- [orchestrator/state.py](/d:/agentic_travel_planner/orchestrator/state.py)
+The main API response is product-oriented:
+- normalized `trip_brief`
+- ranked `trip_packages`
+- `recommended_package`
+- `cost_breakdown`
+- `assumptions`
 
-Current state fields:
-- `run_id`
-- `user_query`
-- `user_id`
-- `plan`
-- `results`
-- `feedback`
-- `attempts`
-- `memory`
-- `memory_after`
-- `status`
-
-## Operational Notes
-
-- The orchestrator reads runtime configuration from environment variables.
-- `OPENAI_API_KEY` is required at startup.
-- The orchestrator persists to SQLite via `TRAVEL_DB_PATH`.
-- The orchestrator assumes the MCP server is reachable at `MCP_BASE_URL`.
-- The orchestrator uses plain Python logging for local debugging.
+This layer should read like a backend for a travel product, not like raw tool execution logs.

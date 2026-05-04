@@ -5,8 +5,11 @@ import httpx
 from orchestrator.config import Settings
 from orchestrator.logger import get_logger
 from orchestrator.schemas import (
+    ActivitiesResponse,
     FlightsResponse,
+    FoodResponse,
     HotelsResponse,
+    LocalTransportResponse,
     ToolDescriptor,
     ToolRegistryResponse,
     WeatherResponse,
@@ -15,9 +18,12 @@ from orchestrator.schemas import (
 logger = get_logger("mcp_client")
 
 TOOL_RESPONSE_MODELS = {
-    "flights": FlightsResponse,
-    "hotels": HotelsResponse,
-    "weather": WeatherResponse,
+    "flight_search": FlightsResponse,
+    "hotel_search": HotelsResponse,
+    "activity_search": ActivitiesResponse,
+    "local_transport_search": LocalTransportResponse,
+    "food_search": FoodResponse,
+    "weather_search": WeatherResponse,
 }
 
 
@@ -48,6 +54,6 @@ class MCPClient:
         model = TOOL_RESPONSE_MODELS.get(tool_name)
         if model is None:
             if not isinstance(payload, dict):
-                raise ValueError(f"MCP tool '{tool_name}' returned an unexpected response payload.")
+                raise ValueError(f"Tool '{tool_name}' returned an unexpected response payload.")
             return payload
-        return model.model_validate(payload).model_dump(by_alias=True)
+        return model.model_validate(payload).model_dump()

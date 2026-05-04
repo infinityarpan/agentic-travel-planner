@@ -21,7 +21,7 @@ async def run():
     service = TravelPlannerService(settings)
     result = await service.plan_trip(
         TravelPlanRequest(
-            user_query="Plan Goa trip under 20000 in a nice weather",
+            user_query="Plan a relaxed 3-night Goa trip for 2 people under 35000 with good food",
             user_id=settings.default_user_id,
         )
     )

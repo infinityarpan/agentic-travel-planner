@@ -11,8 +11,7 @@ load_dotenv()
 @dataclass(frozen=True)
 class Settings:
     openai_api_key: str
-    planner_model: str
-    critic_model: str
+    interpreter_model: str
     mcp_base_url: str
     database_path: str
     default_user_id: str
@@ -21,8 +20,10 @@ class Settings:
     def from_env(cls) -> "Settings":
         return cls(
             openai_api_key=os.getenv("OPENAI_API_KEY", "").strip(),
-            planner_model=os.getenv("PLANNER_MODEL", "gpt-4o-mini").strip(),
-            critic_model=os.getenv("CRITIC_MODEL", "gpt-4o-mini").strip(),
+            interpreter_model=(
+                os.getenv("INTERPRETER_MODEL", "").strip()
+                or os.getenv("PLANNER_MODEL", "gpt-4o-mini").strip()
+            ),
             mcp_base_url=os.getenv("MCP_BASE_URL", "http://127.0.0.1:8001").rstrip("/"),
             database_path=os.getenv("TRAVEL_DB_PATH", "travel_planner.db").strip(),
             default_user_id=os.getenv("DEFAULT_USER_ID", "user_1").strip(),
