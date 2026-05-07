@@ -6,7 +6,7 @@ The orchestrator is the API-facing layer of the travel-platform simulator.
 
 It is intentionally thin:
 - AI interprets the user request into a structured trip brief
-- deterministic logic builds service requests, assembles packages, ranks outcomes, and learns preferences
+- deterministic logic builds service requests, assembles packages, ranks outcomes, generates itineraries, and learns preferences
 
 ## Main Components
 
@@ -16,6 +16,7 @@ It is intentionally thin:
 
 Responsibilities:
 - expose `POST /plan-trip`
+- expose `POST /runs/{run_id}/select-package`
 - expose `GET /health`
 - expose `GET /runs`, `GET /runs/{run_id}`, and `GET /users/{user_id}/memory`
 - validate request and response payloads
@@ -44,6 +45,15 @@ Responsibilities:
 - compute budget fit and total estimated cost
 - choose the recommended package
 
+### Itinerary Builder
+
+- [orchestrator/itinerary_builder.py](/d:/agentic_travel_planner/orchestrator/itinerary_builder.py)
+
+Responsibilities:
+- turn a selected package into a timestamp-aware itinerary
+- respect activity slots, meal windows, hotel timing, and transfer durations
+- persist schedule assumptions and warnings
+
 ### Persistence
 
 - [orchestrator/memory.py](/d:/agentic_travel_planner/orchestrator/memory.py)
@@ -60,5 +70,11 @@ The main API response is product-oriented:
 - `recommended_package`
 - `cost_breakdown`
 - `assumptions`
+
+After package selection, the run also carries:
+- `selected_package_id`
+- `itinerary`
+- `schedule_assumptions`
+- `schedule_warnings`
 
 This layer should read like a backend for a travel product, not like raw tool execution logs.

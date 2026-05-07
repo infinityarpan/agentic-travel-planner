@@ -23,6 +23,8 @@ async def run():
         TravelPlanRequest(
             user_query="Plan a relaxed 3-night Goa trip for 2 people under 35000 with good food",
             user_id=settings.default_user_id,
+            start_date="2026-11-12",
+            end_date="2026-11-15",
         )
     )
     print("\nFinal Output:\n", json.dumps(result.model_dump(), indent=2))

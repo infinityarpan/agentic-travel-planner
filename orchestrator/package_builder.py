@@ -94,6 +94,7 @@ class TripPackageBuilder:
                         score=round(score, 2),
                         package_tags=[trip_brief.trip_style, weather.season_tag, hotel.comfort_level],
                         assumptions=assumptions,
+                        itinerary_preview=self._build_preview(trip_brief, chosen_activities, chosen_food),
                     )
                 )
 
@@ -245,3 +246,13 @@ class TripPackageBuilder:
             f"with {flight.airline} {flight.tier} airfare, a {hotel.star_rating}-star stay in {hotel.area}, "
             f"and {weather.expected_condition.lower()} weather."
         )
+
+    def _build_preview(self, trip_brief: TripBrief, activities, food) -> list[str]:
+        preview = [
+            f"Arrival on {trip_brief.start_date.isoformat()} with hotel check-in and a light evening.",
+        ]
+        for index, activity in enumerate(activities[:2], start=2):
+            preview.append(f"Day {index}: {activity.name}.")
+        if food:
+            preview.append(f"Dining highlight: {food[0].name}.")
+        return preview

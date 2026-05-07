@@ -41,6 +41,10 @@ class Memory:
                     cost_breakdown_json TEXT,
                     assumptions_json TEXT,
                     service_trace_json TEXT,
+                    selected_package_id TEXT,
+                    itinerary_json TEXT,
+                    schedule_assumptions_json TEXT,
+                    schedule_warnings_json TEXT,
                     memory_before_json TEXT,
                     memory_after_json TEXT,
                     error_message TEXT,
@@ -155,6 +159,45 @@ class Memory:
         except sqlite3.Error as exc:
             raise PersistenceError(f"Failed to complete travel run '{run_id}'.") from exc
 
+    def select_package(
+        self,
+        run_id: int,
+        *,
+        status: str,
+        selected_package_id: str,
+        itinerary: list[dict[str, Any]],
+        schedule_assumptions: list[str],
+        schedule_warnings: list[str],
+        memory_after: dict[str, Any],
+    ) -> None:
+        try:
+            with closing(self._connect()) as connection:
+                connection.execute(
+                    """
+                    UPDATE travel_runs
+                    SET status = ?,
+                        selected_package_id = ?,
+                        itinerary_json = ?,
+                        schedule_assumptions_json = ?,
+                        schedule_warnings_json = ?,
+                        memory_after_json = ?,
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE id = ?
+                    """,
+                    (
+                        status,
+                        selected_package_id,
+                        json.dumps(itinerary),
+                        json.dumps(schedule_assumptions),
+                        json.dumps(schedule_warnings),
+                        json.dumps(memory_after),
+                        run_id,
+                    ),
+                )
+                connection.commit()
+        except sqlite3.Error as exc:
+            raise PersistenceError(f"Failed to save itinerary for travel run '{run_id}'.") from exc
+
     def fail_run(self, run_id: int, *, error_message: str) -> None:
         try:
             with closing(self._connect()) as connection:
@@ -180,7 +223,9 @@ class Memory:
                     SELECT id, user_id, user_query, status, trip_brief_json,
                            trip_packages_json, recommended_package_json,
                            cost_breakdown_json, assumptions_json,
-                           service_trace_json, memory_before_json,
+                           service_trace_json, selected_package_id,
+                           itinerary_json, schedule_assumptions_json,
+                           schedule_warnings_json, memory_before_json,
                            memory_after_json, error_message, created_at, updated_at
                     FROM travel_runs
                     WHERE id = ?
@@ -198,7 +243,9 @@ class Memory:
             SELECT id, user_id, user_query, status, trip_brief_json,
                    trip_packages_json, recommended_package_json,
                    cost_breakdown_json, assumptions_json,
-                   service_trace_json, memory_before_json,
+                   service_trace_json, selected_package_id,
+                   itinerary_json, schedule_assumptions_json,
+                   schedule_warnings_json, memory_before_json,
                    memory_after_json, error_message, created_at, updated_at
             FROM travel_runs
         """
@@ -227,6 +274,10 @@ class Memory:
             "cost_breakdown": json.loads(row["cost_breakdown_json"]) if row["cost_breakdown_json"] else None,
             "assumptions": json.loads(row["assumptions_json"]) if row["assumptions_json"] else [],
             "service_trace": json.loads(row["service_trace_json"]) if row["service_trace_json"] else [],
+            "selected_package_id": row["selected_package_id"],
+            "itinerary": json.loads(row["itinerary_json"]) if row["itinerary_json"] else [],
+            "schedule_assumptions": json.loads(row["schedule_assumptions_json"]) if row["schedule_assumptions_json"] else [],
+            "schedule_warnings": json.loads(row["schedule_warnings_json"]) if row["schedule_warnings_json"] else [],
             "memory_before": json.loads(row["memory_before_json"]) if row["memory_before_json"] else {},
             "memory_after": json.loads(row["memory_after_json"]) if row["memory_after_json"] else {},
             "error_message": row["error_message"],

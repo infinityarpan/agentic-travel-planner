@@ -17,6 +17,8 @@ from orchestrator.errors import (
 from orchestrator.logger import configure_logging
 from orchestrator.schemas import (
     ErrorResponse,
+    PackageSelectionRequest,
+    SelectedPackageResponse,
     TravelPlanRequest,
     TravelPlanResponse,
     TravelRunListResponse,
@@ -82,6 +84,18 @@ def create_app(
     )
     async def plan_trip(payload: TravelPlanRequest, request: Request):
         return await request.app.state.service.plan_trip(payload)
+
+    @app.post(
+        "/runs/{run_id}/select-package",
+        response_model=SelectedPackageResponse,
+        responses={
+            404: {"model": ErrorResponse},
+            500: {"model": ErrorResponse},
+            422: {"model": ErrorResponse},
+        },
+    )
+    async def select_package(run_id: int, payload: PackageSelectionRequest, request: Request):
+        return await request.app.state.service.select_package(run_id, payload)
 
     @app.get(
         "/runs/{run_id}",
