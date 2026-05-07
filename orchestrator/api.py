@@ -8,21 +8,21 @@ ROOT_DIR = Path(__file__).resolve().parents[1]
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
-from common.telemetry import configure_tracing, instrument_fastapi
 from orchestrator.config import Settings
 from orchestrator.errors import (
     ConfigurationError,
     PersistenceError,
     ResourceNotFoundError,
-    ServiceDependencyError,
-    ToolExecutionError,
 )
+from orchestrator.logger import configure_logging
 from orchestrator.schemas import (
     ErrorResponse,
-    PlannerRunListResponse,
-    PlannerRunRecord,
+    PackageSelectionRequest,
+    SelectedPackageResponse,
     TravelPlanRequest,
     TravelPlanResponse,
+    TravelRunListResponse,
+    TravelRunRecord,
     UserMemoryResponse,
 )
 from orchestrator.service import TravelPlannerService
@@ -32,10 +32,9 @@ def create_app(
     service: TravelPlannerService | None = None,
     settings: Settings | None = None,
 ) -> FastAPI:
-    configure_tracing("travel-orchestrator")
+    configure_logging()
 
-    app = FastAPI(title="Agentic Travel Planner", version="1.1.0")
-    instrument_fastapi(app)
+    app = FastAPI(title="Travel Platform Backend Simulator", version="2.0.0")
 
     resolved_settings = settings or Settings.from_env()
     resolved_service = service or TravelPlannerService(resolved_settings)
@@ -63,55 +62,50 @@ def create_app(
             content=ErrorResponse(detail=str(exc), error_type="internal_error").model_dump(),
         )
 
-    @app.exception_handler(ToolExecutionError)
-    async def tool_execution_error_handler(_: Request, exc: ToolExecutionError):
+    @app.exception_handler(Exception)
+    async def generic_error_handler(_: Request, exc: Exception):
         return JSONResponse(
-            status_code=exc.status_code,
-            content=ErrorResponse(
-                detail=exc.detail,
-                error_type=exc.error_type,
-                tool_name=exc.tool_name,
-            ).model_dump(),
-        )
-
-    @app.exception_handler(ServiceDependencyError)
-    async def service_dependency_error_handler(_: Request, exc: ServiceDependencyError):
-        return JSONResponse(
-            status_code=exc.status_code,
-            content=ErrorResponse(detail=exc.detail, error_type=exc.error_type).model_dump(),
+            status_code=500,
+            content=ErrorResponse(detail=str(exc), error_type="internal_error").model_dump(),
         )
 
     @app.get("/health")
     def health():
         return {"status": "ok"}
 
-    @app.get("/ready", response_model=dict)
-    def ready(request: Request):
-        request.app.state.service.readiness_check()
-        return {"status": "ready"}
-
     @app.post(
         "/plan-trip",
         response_model=TravelPlanResponse,
         responses={
             404: {"model": ErrorResponse},
+            500: {"model": ErrorResponse},
             422: {"model": ErrorResponse},
-            502: {"model": ErrorResponse},
-            504: {"model": ErrorResponse},
         },
     )
     async def plan_trip(payload: TravelPlanRequest, request: Request):
         return await request.app.state.service.plan_trip(payload)
 
+    @app.post(
+        "/runs/{run_id}/select-package",
+        response_model=SelectedPackageResponse,
+        responses={
+            404: {"model": ErrorResponse},
+            500: {"model": ErrorResponse},
+            422: {"model": ErrorResponse},
+        },
+    )
+    async def select_package(run_id: int, payload: PackageSelectionRequest, request: Request):
+        return await request.app.state.service.select_package(run_id, payload)
+
     @app.get(
         "/runs/{run_id}",
-        response_model=PlannerRunRecord,
+        response_model=TravelRunRecord,
         responses={404: {"model": ErrorResponse}},
     )
     def get_run(run_id: int, request: Request):
         return request.app.state.service.get_run(run_id)
 
-    @app.get("/runs", response_model=PlannerRunListResponse)
+    @app.get("/runs", response_model=TravelRunListResponse)
     def list_runs(
         request: Request,
         user_id: str | None = Query(default=None),

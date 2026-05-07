@@ -1,32 +1,33 @@
-# Agentic Travel Planner
+# Travel Platform Backend Simulator
 
-Agentic travel-planning demo built with:
-- a LangGraph-based orchestrator
-- a FastAPI MCP server
-- OpenTelemetry-based observability
+Fresh-start travel planning backend built around:
+- a thin AI orchestrator for trip-brief extraction
+- deterministic trip-package assembly
+- business-realistic internal mock services for travel search
 
 ## Overview
 
-The application models a travel-planning workflow behind a synchronous backend API:
-- load user memory from SQLite
-- generate a tool plan with an LLM
-- execute MCP tool calls
-- review the result
-- persist updated memory and run history
+The application models a travel-platform backend that:
+- interprets a natural-language travel request into a normalized trip brief
+- queries internal search services for flights, hotels, activities, local transport, food, and weather
+- assembles ranked trip packages
+- generates timestamp-aware itineraries after package selection
+- persists run history and learned user preferences to SQLite
 
-The repo is intentionally small, but now demonstrates:
-- agent orchestration behind a FastAPI service
-- service-to-service tool invocation
-- validated API and tool contracts
-- traces, metrics, and correlated logs
+This phase intentionally stops at:
+- search
+- recommendation
+- package assembly
+- itinerary generation
+
+Booking and payment are deferred.
 
 ## Repository Layout
 
 ```text
-common/         Shared utilities, including telemetry bootstrap
-orchestrator/   LangGraph workflow, agents, MCP client, memory, logging
-mcp_server/     FastAPI MCP server with mock tool endpoints
-docs/           Component-specific documentation
+orchestrator/   API, trip-brief agent, package builder, persistence, MCP client
+mcp_server/     Internal mock backend services for search domains
+docs/           Component-specific notes
 ```
 
 ## Getting Started
@@ -39,16 +40,17 @@ pip install -r requirements.txt
 
 ### 2. Configure environment
 
-Minimum variables for the orchestrator:
+Minimum variables:
 
 ```bash
 OPENAI_API_KEY=your-key
 MCP_BASE_URL=http://127.0.0.1:8001
 TRAVEL_DB_PATH=travel_planner.db
 DEFAULT_USER_ID=user_1
+INTERPRETER_MODEL=gpt-4o-mini
 ```
 
-### 3. Start the MCP server
+### 3. Start the mock backend services
 
 ```bash
 uvicorn mcp_server.server:app --host 127.0.0.1 --port 8001
@@ -65,10 +67,18 @@ uvicorn orchestrator.api:app --host 127.0.0.1 --port 8000
 ```bash
 curl -X POST http://127.0.0.1:8000/plan-trip \
   -H "Content-Type: application/json" \
-  -d "{\"user_query\":\"Plan Goa trip under 20000 in nice weather\",\"user_id\":\"user_1\"}"
+  -d "{\"user_query\":\"Plan a relaxed Goa trip for 2 people under 35000 with good food\",\"user_id\":\"user_1\",\"start_date\":\"2026-11-12\",\"end_date\":\"2026-11-15\"}"
 ```
 
-### 6. Inspect persisted runs and memory
+### 6. Select a package and generate the itinerary
+
+```bash
+curl -X POST http://127.0.0.1:8000/runs/1/select-package \
+  -H "Content-Type: application/json" \
+  -d "{\"package_id\":\"goa-CCU-GOA-F1-GOA-H1\"}"
+```
+
+### 7. Inspect persisted runs and memory
 
 ```bash
 curl http://127.0.0.1:8000/runs
@@ -82,40 +92,15 @@ curl http://127.0.0.1:8000/users/user_1/memory
 python orchestrator/main.py
 ```
 
-## Observability
+## Current Domain Services
 
-The repo currently supports:
-- traces via OpenTelemetry
-- metrics via OpenTelemetry
-- Python logs enriched with active `trace_id` and `span_id`
+The internal mock backend currently exposes:
+- `flight_search`
+- `hotel_search`
+- `activity_search`
+- `local_transport_search`
+- `food_search`
+- `weather_search`
 
-Telemetry is env-driven, OTLP-capable, and development-friendly with local fallback behavior.
-
-See the component docs for details:
-- [Observability](docs/observability/README.md)
-- [Orchestrator](docs/orchestrator/README.md)
-- [MCP Server](docs/mcp_server/README.md)
-
-## Environment Variables
-
-Common runtime variables:
-
-```bash
-APP_ENV=development
-APP_VERSION=dev
-OTEL_SERVICE_NAME=travel-orchestrator
-OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
-APP_OTEL_SAMPLER=always_on
-APP_OTEL_SAMPLER_ARG=1.0
-APP_OTEL_METRICS_ENABLED=true
-PLANNER_MODEL=gpt-4o-mini
-CRITIC_MODEL=gpt-4o-mini
-```
-
-For full telemetry configuration, see [docs/observability/README.md](docs/observability/README.md).
-
-## Notes
-
-- The orchestrator and MCP server should run as separate processes.
-- In production, prefer app -> collector -> backend instead of exporting directly from the app to a hosted backend.
-- If telemetry code changes, restart the MCP server so new tracing/metric behavior is active.
+All of them are mocked, but their behavior is designed to resemble an internal travel-platform backend rather than a toy API.
+They now also carry internal timing data such as schedule windows, travel times, and hotel timing constraints for itinerary generation.

@@ -30,15 +30,21 @@ class Memory:
             )
             connection.execute(
                 """
-                CREATE TABLE IF NOT EXISTS planner_runs (
+                CREATE TABLE IF NOT EXISTS travel_runs (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     user_id TEXT NOT NULL,
                     user_query TEXT NOT NULL,
                     status TEXT NOT NULL,
-                    attempts INTEGER NOT NULL DEFAULT 0,
-                    plan_json TEXT,
-                    results_json TEXT,
-                    feedback_json TEXT,
+                    trip_brief_json TEXT,
+                    trip_packages_json TEXT,
+                    recommended_package_json TEXT,
+                    cost_breakdown_json TEXT,
+                    assumptions_json TEXT,
+                    service_trace_json TEXT,
+                    selected_package_id TEXT,
+                    itinerary_json TEXT,
+                    schedule_assumptions_json TEXT,
+                    schedule_warnings_json TEXT,
                     memory_before_json TEXT,
                     memory_after_json TEXT,
                     error_message TEXT,
@@ -49,15 +55,11 @@ class Memory:
             )
             connection.execute(
                 """
-                CREATE INDEX IF NOT EXISTS idx_planner_runs_user_created
-                ON planner_runs (user_id, created_at DESC)
+                CREATE INDEX IF NOT EXISTS idx_travel_runs_user_created
+                ON travel_runs (user_id, created_at DESC)
                 """
             )
             connection.commit()
-
-    def healthcheck(self) -> None:
-        with closing(self._connect()) as connection:
-            connection.execute("SELECT 1")
 
     def get_user_memory(self, user_id: str) -> dict[str, Any]:
         try:
@@ -98,7 +100,7 @@ class Memory:
             with closing(self._connect()) as connection:
                 cursor = connection.execute(
                     """
-                    INSERT INTO planner_runs (
+                    INSERT INTO travel_runs (
                         user_id,
                         user_query,
                         status,
@@ -110,90 +112,142 @@ class Memory:
                 connection.commit()
                 return int(cursor.lastrowid)
         except sqlite3.Error as exc:
-            raise PersistenceError("Failed to create planner run record.") from exc
+            raise PersistenceError("Failed to create travel run record.") from exc
 
     def complete_run(
         self,
         run_id: int,
         *,
         status: str,
-        attempts: int,
-        plan: list[dict[str, Any]],
-        results: list[dict[str, Any]],
-        feedback: dict[str, Any],
+        trip_brief: dict[str, Any],
+        trip_packages: list[dict[str, Any]],
+        recommended_package: dict[str, Any],
+        cost_breakdown: dict[str, Any],
+        assumptions: list[str],
+        service_trace: list[dict[str, Any]],
         memory_after: dict[str, Any],
     ) -> None:
         try:
             with closing(self._connect()) as connection:
                 connection.execute(
                     """
-                    UPDATE planner_runs
+                    UPDATE travel_runs
                     SET status = ?,
-                        attempts = ?,
-                        plan_json = ?,
-                        results_json = ?,
-                        feedback_json = ?,
+                        trip_brief_json = ?,
+                        trip_packages_json = ?,
+                        recommended_package_json = ?,
+                        cost_breakdown_json = ?,
+                        assumptions_json = ?,
+                        service_trace_json = ?,
                         memory_after_json = ?,
                         updated_at = CURRENT_TIMESTAMP
                     WHERE id = ?
                     """,
                     (
                         status,
-                        attempts,
-                        json.dumps(plan),
-                        json.dumps(results),
-                        json.dumps(feedback),
+                        json.dumps(trip_brief),
+                        json.dumps(trip_packages),
+                        json.dumps(recommended_package),
+                        json.dumps(cost_breakdown),
+                        json.dumps(assumptions),
+                        json.dumps(service_trace),
                         json.dumps(memory_after),
                         run_id,
                     ),
                 )
                 connection.commit()
         except sqlite3.Error as exc:
-            raise PersistenceError(f"Failed to complete planner run '{run_id}'.") from exc
+            raise PersistenceError(f"Failed to complete travel run '{run_id}'.") from exc
 
-    def fail_run(self, run_id: int, *, attempts: int, error_message: str) -> None:
+    def select_package(
+        self,
+        run_id: int,
+        *,
+        status: str,
+        selected_package_id: str,
+        itinerary: list[dict[str, Any]],
+        schedule_assumptions: list[str],
+        schedule_warnings: list[str],
+        memory_after: dict[str, Any],
+    ) -> None:
         try:
             with closing(self._connect()) as connection:
                 connection.execute(
                     """
-                    UPDATE planner_runs
+                    UPDATE travel_runs
                     SET status = ?,
-                        attempts = ?,
+                        selected_package_id = ?,
+                        itinerary_json = ?,
+                        schedule_assumptions_json = ?,
+                        schedule_warnings_json = ?,
+                        memory_after_json = ?,
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE id = ?
+                    """,
+                    (
+                        status,
+                        selected_package_id,
+                        json.dumps(itinerary),
+                        json.dumps(schedule_assumptions),
+                        json.dumps(schedule_warnings),
+                        json.dumps(memory_after),
+                        run_id,
+                    ),
+                )
+                connection.commit()
+        except sqlite3.Error as exc:
+            raise PersistenceError(f"Failed to save itinerary for travel run '{run_id}'.") from exc
+
+    def fail_run(self, run_id: int, *, error_message: str) -> None:
+        try:
+            with closing(self._connect()) as connection:
+                connection.execute(
+                    """
+                    UPDATE travel_runs
+                    SET status = ?,
                         error_message = ?,
                         updated_at = CURRENT_TIMESTAMP
                     WHERE id = ?
                     """,
-                    ("failed", attempts, error_message, run_id),
+                    ("failed", error_message, run_id),
                 )
                 connection.commit()
         except sqlite3.Error as exc:
-            raise PersistenceError(f"Failed to mark planner run '{run_id}' as failed.") from exc
+            raise PersistenceError(f"Failed to mark travel run '{run_id}' as failed.") from exc
 
     def get_run(self, run_id: int) -> dict[str, Any]:
         try:
             with closing(self._connect()) as connection:
                 row = connection.execute(
                     """
-                    SELECT id, user_id, user_query, status, attempts, plan_json,
-                           results_json, feedback_json, memory_before_json,
+                    SELECT id, user_id, user_query, status, trip_brief_json,
+                           trip_packages_json, recommended_package_json,
+                           cost_breakdown_json, assumptions_json,
+                           service_trace_json, selected_package_id,
+                           itinerary_json, schedule_assumptions_json,
+                           schedule_warnings_json, memory_before_json,
                            memory_after_json, error_message, created_at, updated_at
-                    FROM planner_runs
+                    FROM travel_runs
                     WHERE id = ?
                     """,
                     (run_id,),
                 ).fetchone()
         except sqlite3.Error as exc:
-            raise PersistenceError(f"Failed to load planner run '{run_id}'.") from exc
+            raise PersistenceError(f"Failed to load travel run '{run_id}'.") from exc
         if not row:
-            raise ResourceNotFoundError(f"Planner run '{run_id}' was not found.")
+            raise ResourceNotFoundError(f"Travel run '{run_id}' was not found.")
         return self._deserialize_run(row)
 
     def list_runs(self, *, user_id: str | None = None, limit: int = 20) -> list[dict[str, Any]]:
         query = """
-            SELECT id, user_id, user_query, status, attempts, plan_json,
-                   results_json, feedback_json, memory_before_json,
+            SELECT id, user_id, user_query, status, trip_brief_json,
+                   trip_packages_json, recommended_package_json,
+                   cost_breakdown_json, assumptions_json,
+                   service_trace_json, selected_package_id,
+                   itinerary_json, schedule_assumptions_json,
+                   schedule_warnings_json, memory_before_json,
                    memory_after_json, error_message, created_at, updated_at
-            FROM planner_runs
+            FROM travel_runs
         """
         params: list[Any] = []
         if user_id:
@@ -205,7 +259,7 @@ class Memory:
             with closing(self._connect()) as connection:
                 rows = connection.execute(query, tuple(params)).fetchall()
         except sqlite3.Error as exc:
-            raise PersistenceError("Failed to list planner runs.") from exc
+            raise PersistenceError("Failed to list travel runs.") from exc
         return [self._deserialize_run(row) for row in rows]
 
     def _deserialize_run(self, row: sqlite3.Row) -> dict[str, Any]:
@@ -214,10 +268,16 @@ class Memory:
             "user_id": row["user_id"],
             "user_query": row["user_query"],
             "status": row["status"],
-            "attempts": row["attempts"],
-            "plan": json.loads(row["plan_json"]) if row["plan_json"] else [],
-            "results": json.loads(row["results_json"]) if row["results_json"] else [],
-            "feedback": json.loads(row["feedback_json"]) if row["feedback_json"] else {},
+            "trip_brief": json.loads(row["trip_brief_json"]) if row["trip_brief_json"] else None,
+            "trip_packages": json.loads(row["trip_packages_json"]) if row["trip_packages_json"] else [],
+            "recommended_package": json.loads(row["recommended_package_json"]) if row["recommended_package_json"] else None,
+            "cost_breakdown": json.loads(row["cost_breakdown_json"]) if row["cost_breakdown_json"] else None,
+            "assumptions": json.loads(row["assumptions_json"]) if row["assumptions_json"] else [],
+            "service_trace": json.loads(row["service_trace_json"]) if row["service_trace_json"] else [],
+            "selected_package_id": row["selected_package_id"],
+            "itinerary": json.loads(row["itinerary_json"]) if row["itinerary_json"] else [],
+            "schedule_assumptions": json.loads(row["schedule_assumptions_json"]) if row["schedule_assumptions_json"] else [],
+            "schedule_warnings": json.loads(row["schedule_warnings_json"]) if row["schedule_warnings_json"] else [],
             "memory_before": json.loads(row["memory_before_json"]) if row["memory_before_json"] else {},
             "memory_after": json.loads(row["memory_after_json"]) if row["memory_after_json"] else {},
             "error_message": row["error_message"],
