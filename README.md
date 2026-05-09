@@ -27,6 +27,7 @@ Booking and payment are deferred.
 ```text
 orchestrator/   API, trip-brief agent, package builder, persistence, MCP client
 mcp_server/     Internal mock backend services for search domains
+frontend/       Minimal browser UI served by the orchestrator API
 docs/           Component-specific notes
 ```
 
@@ -62,7 +63,61 @@ uvicorn mcp_server.server:app --host 127.0.0.1 --port 8001
 uvicorn orchestrator.api:app --host 127.0.0.1 --port 8000
 ```
 
-### 5. Call the planner API
+The orchestrator also serves the frontend UI. Once both services are running, open:
+
+```text
+http://127.0.0.1:8000/
+```
+
+The UI lets you submit a natural-language trip request, compare generated packages, select a package, view the itinerary, and inspect recent runs and user memory.
+
+If port `8000` is already occupied, start the orchestrator on another port:
+
+```bash
+uvicorn orchestrator.api:app --host 127.0.0.1 --port 8010
+```
+
+Then open:
+
+```text
+http://127.0.0.1:8010/
+```
+
+### 5. Run with Docker Compose
+
+Create a local `.env` file with at least your OpenAI key:
+
+```bash
+OPENAI_API_KEY=your-key
+```
+
+The `.env` file is ignored by Git and excluded from the Docker image context.
+
+Then build and start both services:
+
+```bash
+docker compose up --build
+```
+
+Compose starts:
+- mock backend at `http://127.0.0.1:8001`
+- orchestrator API and frontend UI at `http://127.0.0.1:8000`
+
+The containerized orchestrator stores SQLite data in the `travel-data` Docker volume at `/app/data/travel_planner.db`.
+
+To stop the stack:
+
+```bash
+docker compose down
+```
+
+To also remove persisted Docker volume data:
+
+```bash
+docker compose down -v
+```
+
+### 6. Call the planner API directly
 
 ```bash
 curl -X POST http://127.0.0.1:8000/plan-trip \
@@ -70,7 +125,7 @@ curl -X POST http://127.0.0.1:8000/plan-trip \
   -d "{\"user_query\":\"Plan a relaxed Goa trip for 2 people under 35000 with good food\",\"user_id\":\"user_1\",\"start_date\":\"2026-11-12\",\"end_date\":\"2026-11-15\"}"
 ```
 
-### 6. Select a package and generate the itinerary
+### 7. Select a package and generate the itinerary
 
 ```bash
 curl -X POST http://127.0.0.1:8000/runs/1/select-package \
@@ -78,7 +133,7 @@ curl -X POST http://127.0.0.1:8000/runs/1/select-package \
   -d "{\"package_id\":\"goa-CCU-GOA-F1-GOA-H1\"}"
 ```
 
-### 7. Inspect persisted runs and memory
+### 8. Inspect persisted runs and memory
 
 ```bash
 curl http://127.0.0.1:8000/runs

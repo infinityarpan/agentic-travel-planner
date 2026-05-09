@@ -2,9 +2,12 @@ from pathlib import Path
 import sys
 
 from fastapi import FastAPI, Query, Request
+from fastapi.responses import FileResponse
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
+FRONTEND_DIR = ROOT_DIR / "frontend"
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
@@ -116,6 +119,13 @@ def create_app(
     @app.get("/users/{user_id}/memory", response_model=UserMemoryResponse)
     def get_user_memory(user_id: str, request: Request):
         return request.app.state.service.get_user_memory(user_id)
+
+    if FRONTEND_DIR.exists():
+        app.mount("/static", StaticFiles(directory=FRONTEND_DIR), name="frontend")
+
+        @app.get("/", include_in_schema=False)
+        def frontend_index():
+            return FileResponse(FRONTEND_DIR / "index.html")
 
     return app
 

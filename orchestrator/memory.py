@@ -9,7 +9,9 @@ from orchestrator.errors import PersistenceError, ResourceNotFoundError
 
 class Memory:
     def __init__(self, database_path: str):
-        self.database_path = str(Path(database_path).resolve())
+        resolved_path = Path(database_path).resolve()
+        resolved_path.parent.mkdir(parents=True, exist_ok=True)
+        self.database_path = str(resolved_path)
         self._initialize()
 
     def _connect(self) -> sqlite3.Connection:
